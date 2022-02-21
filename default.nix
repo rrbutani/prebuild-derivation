@@ -22,6 +22,8 @@ let
       systemNames ? defaultSystems,
     }:
     let
+      # If `pkg` isn't a function, turn it into a function that looks up the
+      # `pkg` field:
       pkg' = if isString pkg then getAttr pkg else pkg;
     in
     preBuildDerivations (map (sys: pkg' nixpkgs.${sys}) systemNames)
