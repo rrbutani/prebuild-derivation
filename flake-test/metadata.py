@@ -26,10 +26,7 @@ copy("args")
 copy("env")
 copy("narHash", runtime_info)
 
-nar_hash = runtime_info["narHash"]
-assert nar_hash.startswith("sha256:")
-hash = nar_hash.removeprefix("sha256:")
-out["hash"] = hash
+out["hash"] = run("nix", "hash", "to-base16", runtime_info["narHash"]).strip()
 
 # Can't call `nix-store` inside recursive nix, I think.
 """
