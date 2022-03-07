@@ -4,9 +4,32 @@
   inputs = {
     nixpkgs.url = github:NixOS/nixpkgs/nixos-21.11;
   };
-  outputs = { self, nixpkgs }: {
+  outputs = { self, nixpkgs }: let
+    system = "aarch64-darwin";
+    np = import nixpkgs { inherit system; };
+    target = np.nix;
 
-    defaultPackage.aarch64-darwin =
+    # prebuild:
+    # store runtime deps (from exportReferencesGraph)
+    # store build deps (from `show-derivation` on the target)
+    # store the actual thing (nix dump-path -- target, piped into xz)
+    #   - compute the checksum and store it?
+
+    # ~secret~ string context functions: https://github.com/NixOS/nix/commit/1d757292d0cb78beec32fcdfe15c2944a4bc4a95#diff-f9b278c45a70ce046ba391eaca009baf0f306a99c2328e1a651bbb36cf22d802
+
+    # substitute:
+    # compute deps for original (nix show-derivation on the drvPath – passed in with unsafeDiscardStringContext)
+    #   - check that deps include all the runtime deps, conditionally
+    #   - check that deps include all the build deps, conditionally
+    # extract from the actual thing (fixed output drv, output hash, etc)
+
+    # NOTE: the above will do drvPath comparison and not output path comparison (except for fixedOutput drvs, I think)
+    # this is fine for input-addressable derivations (equivalent) and also for content-addressed derivations
+
+    prebuild =
+      { target
+      , outputsToPackage ? null
+      }:
     let
       np = import nixpkgs { system = "aarch64-darwin"; };
       target = np.nix;
