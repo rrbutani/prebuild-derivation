@@ -178,30 +178,76 @@
       derivation args // attrsToRestore
     ;
 
-          # NOTE: the above will do drvPath comparison and not output path comparison (except for fixedOutput drvs, I think)
-          # this is fine for input-addressable derivations (equivalent) and also for content-addressed derivations
+    checkDerivationsSame = a: b:
+    let
+      oneOutputOrMultiple = drv: if drv ? outputs then drv.outputs else [ drv.outputName ];
+      aOutputs = oneOutputOrMultiple a;
+      bOutputs = oneOutputOrMultiple b;
+    in
+    derivation {
+      name = "cmp-" + a.pname + "-" + b.pname;
+      builder = "${np.bash}/bin/bash";
+      inherit system;
+      _chkSameOutputs = aOutputs == bOutputs || builtins.throw "outputs are not the same: `${toString aOutputs}` vs `${toString bOutputs}`";
 
-          np.writeScript "test.sh" ''
-            # env
+      outputsToCompare = aOutputs;
+      aOutputPaths = map (o: a.${o}) aOutputs;
+      bOutputPaths = map (o: b.${o}) bOutputs;
 
-            . "''${NIX_ATTRS_SH_FILE}"
-            for d in "''${deps[@]}"; do export PATH="''${PATH}:''${d}/bin"; done
+      deps = with np; [ coreutils nix_2_4 ];
+      args = [(
+        np.writeScript "cmp.sh" ''
+          for d in ''${deps[@]}; do export PATH="''${PATH}:''${d}/bin"; done
 
-            getAttr() { jq -r "''${@}" <"''${NIX_ATTRS_JSON_FILE}"; }
+          outputs=($outputsToCompare)
+          a=($aOutputPaths)
+          b=($bOutputPaths)
 
-            out="''${outputs[out]}";
-            mkdir -p $out
+          set -x
 
-            nix show-derivation ${target} > drv.json
-            getAttr ".target | .[] | select(.path == \"$targetPath\")" > runtime.json
+          mismatched=""
+          for ((i = 0; i < ''${#a[@]}; ++i)); do
+            O=''${outputs[$i]}; A=''${a[$i]}; B=''${b[$i]};
 
-            python3 ${./metadata.py} \
-                runtime.json drv.json \
-              | jq > $out/metadata.json
+            Ah=$(nix store dump-path $A | nix hash file /dev/stdin --base16)
+            Bh=$(nix store dump-path $B | nix hash file /dev/stdin --base16)
 
-            tar cJf $out/archive.tar.xz -C ${target} .
-          ''
-        )];
-      };
+            if ! [ "$Ah" == "$Bh" ]; then
+              echo "Output \`$O\` mismatched!"
+              echo "  - A: $A = $Ah"
+              echo "  - B: $B = $Bh"
+              mismatched="yes"
+            fi
+          done
+
+          if [ $mismatched ]; then exit 4; fi
+
+          mkdir -p $(dirname $out)
+          touch $out
+        ''
+      )];
+    };
+
+    roundtrip = orig:
+      (restore { dir = (prebuild { target = orig; }).outPath; sourceDerivation = orig; });
+
+    check = orig: checkDerivationsSame
+      orig
+      (roundtrip orig)
+    ;
+  in
+  {
+    lib = {
+      inherit prebuild restore;
+    };
+    packages.${system} = {
+      prebuild = (prebuild { inherit target; });
+      restore = (restore { dir = ./prebuilt; sourceDerivation = target; });
+
+      neofetch = roundtrip np.neofetch;
+    };
+    checks.${system} = {
+      same1 = check np.neofetch;
+    };
   };
 }
