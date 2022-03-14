@@ -83,6 +83,8 @@ I think i'm really just describing an alternative implementation of this package
 TODO
 # caveats
 
+### dependents
+
 unless you alter the derivations you are seeking to replace with prebuilts to be content addressable, using a prebuilt in lieu of the original derivation in a dependent derivation will trigger a rebuild
 
 put differently, the prebuilt's derivation will *not* have the same nix store output path as the original unless you switch the original to be content addressed
@@ -91,6 +93,13 @@ even though the prebuilt derivation's output is identical to that of the origina
 
 this is in contrast to the methods discussed above; simply requiring that users load some paths into their nix in lieu of building them themselves means that the output path of the artifact you're trying to "prebuild" is the same regardless (though, it's worth noting that for the "copy in store paths" path you'd need some additional machinery to make this happen; you run into the same issue wrt to the normal route having an input addressed hash). even with the "use a cache" route you need to exercise some care to have your derivations line up while not making whatever it is you want to hide public (i.e. you can't remove the source files because that'd change the drvs of the downstream things if referenced by path and you can't use `builtins.fetchGit` because it runs at eval time so you probably want `nixpkgs.fetchgit` with a sha256 but that doesn't have access to your environment meaning private repos are hard, etc, etc).
 
+### self-references
+
+(TODO)
+have to enable the `replaceSelfReferences` option
+note: for CA derivations this will not break what's described above, I think; the hashing *should* happen between replacement of the [self-references with a "fixed magic value"](https://github.com/tweag/rfcs/blob/cas-rfc/rfcs/0062-content-addressed-paths.md#self-references) and replacement with the actual hash path
+
+TODO: add tests for this
 
 # usage
 
