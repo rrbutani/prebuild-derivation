@@ -132,7 +132,7 @@
         }
         // (if sourceDerivation ? meta then { meta = sourceDerivation.meta // { prebuilt = true; }; } else {});
 
-      multiOutput = sourceDerivation ? outputs && ((builtins.length sourceDerivation.outputs) > 1);
+      # multiOutput = sourceDerivation ? outputs && ((builtins.length sourceDerivation.outputs) > 1);
 
       args =
         sourceDerivation.drvAttrs // {
@@ -170,13 +170,12 @@
                 # --verbose \
                 # --show-transformed-names
                 # --absolute-names \
-              # set +x; ls -ltrahR ''${!output}
             done
           ''
         )];
       } // (
-        if multiOutput
-        then
+        # if multiOutput
+        # then (
           # Otherwise we have to fall back to being content addressed, if that's enabled:
           if useContentAddressedDerivations
           then {
@@ -187,13 +186,17 @@
           # Or just being a regular input-addressed derivation (in this case, the prebuilt
           # derivation that we are producing is *certain* to not match the output path of
           # the original derivation):
-          else builtins.trace "Warning: falling back to an input-addressed derivation for the substitute" {}
-        else {
-          # If we do not have multiple outputs we can be a fixed output derivation.
-          outputHash = metadata.hash;
-          outputHashMode = "recursive";
-          outputHashAlgo = "sha256";
-        }
+          else {
+            _output = builtins.trace
+              "Warning: falling back to an input-addressed derivation for the substitute" 0;
+          }
+        # )
+        # else {
+        #   # If we do not have multiple outputs we can be a fixed output derivation.
+        #   outputHash = metadata.hash;
+        #   outputHashMode = "recursive";
+        #   outputHashAlgo = "sha256";
+        # }
       );
     in
       derivation args // attrsToRestore
@@ -204,9 +207,21 @@
       oneOutputOrMultiple = drv: if drv ? outputs then drv.outputs else [ drv.outputName ];
       aOutputs = oneOutputOrMultiple a;
       bOutputs = oneOutputOrMultiple b;
+
+      isCA = x: x ? __contentAddressed;
+
+      obfuscate = i: builtins.unsafeDiscardStringContext (
+        builtins.concatStringsSep "%%" (
+          builtins.filter
+            (x: builtins.typeOf x != "list")
+            (builtins.split "/" i)
+        )
+      );
+      origA = obfuscate "${a}";
+      origB = obfuscate "${b}";
     in
     derivation {
-      name = "cmp-" + a.pname + "-" + b.pname;
+      name = "cmp-" + a.pname + (if (isCA a) then "-CA" else "") + "-" + b.pname + (if (isCA b) then "-CA" else "");
       builder = "${np.bash}/bin/bash";
       inherit system;
       _chkSameOutputs = aOutputs == bOutputs || builtins.throw "outputs are not the same: `${toString aOutputs}` vs `${toString bOutputs}`";
@@ -214,7 +229,6 @@
       outputsToCompare = aOutputs;
       aOutputPaths = map (o: a.${o}) aOutputs;
       bOutputPaths = map (o: b.${o}) bOutputs;
-
       deps = with np; [ coreutils nix_2_4 ];
       args = [(
         np.writeScript "cmp.sh" ''
@@ -224,7 +238,11 @@
           a=($aOutputPaths)
           b=($bOutputPaths)
 
-          set -x
+          echo "checking ${a.name} (original) v. ${b.name} (substitute)"
+          origA="${origA}"; origA=''${origA//\%\%//}
+          origB="${origB}"; origB=''${origB//\%\%//}
+          echo orig ${a} "(at eval: ''${origA})" "(drv: ${builtins.unsafeDiscardStringContext a.drvPath})" "(CA: ${toString (isCA a)})"
+          echo subs ${b} "(at eval: ''${origB})" "(drv: ${builtins.unsafeDiscardStringContext b.drvPath})" "(CA: ${toString (isCA b)})"
 
           mismatched=""
           for ((i = 0; i < ''${#a[@]}; ++i)); do
@@ -279,7 +297,7 @@
       sameSingleOutput = check np.neofetch;
       sameMultiOutput = check np.xz;
       sameMultiOutputComplex = check np.nix;
-      # sameSingleOutputCA = checkCA np.neofetch;
+      sameSingleOutputCA = checkCA np.neofetch;
       sameMultiOutputCA = checkCA np.xz;
       sameMultiOutputComplexCA = checkCA np.nix;
     };
