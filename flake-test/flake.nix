@@ -26,6 +26,8 @@
     # NOTE: the above will do drvPath comparison and not output path comparison (except for fixedOutput drvs, I think)
     # this is fine for input-addressable derivations (equivalent) and also for content-addressed derivations
 
+    # TODO: record original output paths, rewrite to the new ones in the restore phase
+
     prebuild =
       { target
       , outputsToPackage ? null
@@ -158,10 +160,11 @@
               "${toString checkForExtraDeps}" \
             || exit 5
 
+            echo "restoring from archive: ${archiveFile}"
             for output in ''${outputs}; do
               echo $output to ''${!output}
               mkdir -p ''${!output}
-              # ls -ltrah ''${!output}; set -x
+
               tar xf "${archiveFile}" \
                 -C ''${!output} \
                 $output \
