@@ -6,8 +6,8 @@
   };
   outputs = { self, nixpkgs }: let
     system = "aarch64-darwin";
-    np = import nixpkgs { inherit system; };
-    target = np.nix;
+    np = import nixpkgs { inherit system; config = { contentAddressedByDefault = false; }; };
+    # target = np.nix;
 
     # prebuild:
     # store runtime deps (from exportReferencesGraph)
@@ -56,6 +56,8 @@
 
       deps = with np; [ nix_2_4 coreutils jq python310 gnutar xz ];
       targetPath = target.all;
+      _backupDrvPath = builtins.unsafeDiscardStringContext target.drvPath;
+      _targetIsContentAddressed = target ? __contentAddressed;
       inherit targetOutputs;
       args = [(
         np.writeScript "prebuild.sh" ''
@@ -67,16 +69,23 @@
           out="''${outputs[out]}";
           mkdir -p $out
 
-          nix show-derivation ''${targetPath} > drv.json
+          nix show-derivation ''${targetPath} > drv.json 2>/dev/null || {
+            if [ $_targetIsContentAddressed ]; then
+              nix show-derivation ''${_backupDrvPath} > drv.json
+            else
+              exit 4;
+            fi
+          }
           getAttr ".target | .[] | select(.path == \"$targetPath\")" > runtime.json
 
           python3 "${./grab_metadata.py}" \
               runtime.json drv.json \
             | jq > $out/metadata.json
 
+          echo "archiving ${target.name}:"
           for output_name in "''${!targetOutputs[@]}"; do
-            echo $output_name ''${targetOutputs[$output_name]}
-            tar rf $out/archive.tar -C "''${targetOutputs[$output_name]}" . --transform "s,^,''${output_name}/,"
+            echo $output_name from ''${targetOutputs[$output_name]}
+            tar rf $out/archive.tar -C "''${targetOutputs[$output_name]}" . --transform "s,^./,''${output_name}/,"
           done
 
           xz $out/archive.tar
@@ -107,7 +116,12 @@
       #
       # Stripping the string context here ensures that we do not cause nix to
       # build the derivation.
-      originalDerivationPath = builtins.unsafeDiscardStringContext (toString sourceDerivation);
+      originalDerivationIsContentAddressable = sourceDerivation ? __contentAddressed;
+      originalDerivationPath = builtins.unsafeDiscardStringContext (
+        if originalDerivationIsContentAddressable
+        then (toString sourceDerivation.drvPath)
+        else (toString sourceDerivation)
+      );
 
       noOverride = builtins.throw "Cannot override a prebuilt derivation, sorry!";
       attrsToRestore = {
@@ -141,15 +155,22 @@
               "${toString checkRuntimeDeps}" \
               "${toString checkBuildDeps}" \
               "${toString checkExtraAttrs}" \
-              "${toString checkForExtraDeps}"
+              "${toString checkForExtraDeps}" \
+            || exit 5
 
             for output in ''${outputs}; do
               echo $output to ''${!output}
-              tar xf "${archiveFile}" $output \
-                --transform "s,^''${output}/,''${!output}/," \
-                --absolute-names \
+              mkdir -p ''${!output}
+              # ls -ltrah ''${!output}; set -x
+              tar xf "${archiveFile}" \
+                -C ''${!output} \
+                $output \
+                --transform "s,^''${output}/,," \
+                --delay-directory-restore \
                 # --verbose \
                 # --show-transformed-names
+                # --absolute-names \
+              # set +x; ls -ltrahR ''${!output}
             done
           ''
         )];
@@ -235,19 +256,32 @@
       orig
       (roundtrip orig)
     ;
+
+    checkCA = orig: check (orig.overrideDerivation
+      (old: {
+        __contentAddressed = true;
+        outputHashMode = "recursive";
+        outputHashAlgo = "sha256";
+      })
+    );
   in
   {
     lib = {
-      inherit prebuild restore;
+      inherit prebuild restore roundtrip;
     };
     packages.${system} = {
-      prebuild = (prebuild { inherit target; });
-      restore = (restore { dir = ./prebuilt; sourceDerivation = target; });
+      # prebuild = (prebuild { inherit target; });
+      # restore = (restore { dir = ./prebuilt; sourceDerivation = target; });
 
       neofetch = roundtrip np.neofetch;
     };
     checks.${system} = {
-      same1 = check np.neofetch;
+      sameSingleOutput = check np.neofetch;
+      sameMultiOutput = check np.xz;
+      sameMultiOutputComplex = check np.nix;
+      # sameSingleOutputCA = checkCA np.neofetch;
+      sameMultiOutputCA = checkCA np.xz;
+      sameMultiOutputComplexCA = checkCA np.nix;
     };
   };
 }
