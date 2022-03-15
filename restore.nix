@@ -1,13 +1,13 @@
-# substitute:
+# restore:
 # compute deps for original (nix show-derivation on the drvPath – passed in with unsafeDiscardStringContext)
 #   - check that deps include all the runtime deps, conditionally
 #   - check that deps include all the build deps, conditionally
-# extract from the actual thing (fixed output drv, output hash, etc)
+# extract from the tarball
 #
 # NOTE: the above will do drvPath comparison and not output path comparison (except for fixedOutput drvs, I think)
 # this is fine for input-addressable derivations (equivalent) and also for content-addressed derivations
 
-# TODO: record original output paths, rewrite to the new ones in the restore phase
+# TODO: record original output paths, rewrite to the new ones in the restore phase (issue #2)
 
 { dir
 , np
@@ -91,29 +91,19 @@ let
       ''
     )];
   } // (
-    # if multiOutput
-    # then (
-      # Otherwise we have to fall back to being content addressed, if that's enabled:
-      if useContentAddressedDerivations
-      then {
-        __contentAddressed = true;
-        outputHashMode = "recursive";
-        outputHashAlgo = "sha256";
-      }
-      # Or just being a regular input-addressed derivation (in this case, the prebuilt
-      # derivation that we are producing is *certain* to not match the output path of
-      # the original derivation):
-      else {
-        _output = builtins.trace
-          "Warning: falling back to an input-addressed derivation for the substitute" 0;
-      }
-    # )
-    # else {
-    #   # If we do not have multiple outputs we can be a fixed output derivation.
-    #   outputHash = metadata.hash;
-    #   outputHashMode = "recursive";
-    #   outputHashAlgo = "sha256";
-    # }
+    if useContentAddressedDerivations
+    then {
+      __contentAddressed = true;
+      outputHashMode = "recursive";
+      outputHashAlgo = "sha256";
+    }
+    # In this case, the prebuilt derivation that we are producing is *certain*
+    # to not match the output path of the original derivation):
+    else (
+      builtins.trace
+      "Warning: falling back to an input-addressed derivation for the substitute"
+      {}
+    )
   );
 in
   derivation args // attrsToRestore

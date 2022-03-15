@@ -45,7 +45,7 @@ let
     let
       # If `pkg` isn't a function, turn it into a function that looks up the
       # `pkg` field:
-      pkg' = if isString pkg then getAttr pkg else pkg;
+      pkg' = if builtins.isString pkg then builtins.getAttr pkg else pkg;
     in
     prebuildDerivation { inherit nixpkgs outputsToPackage; target = (pkg' nixpkgs); };
 
@@ -70,11 +70,11 @@ let
     let
       # If `pkg` isn't a function, turn it into a function that looks up the
       # `pkg` field:
-      pkg' = if isString pkg then getAttr pkg else pkg;
+      pkg' = if builtins.isString pkg then builtins.getAttr pkg else pkg;
     in
     prebuildDerivations {
       inherit nixpkgs;
-      derivations = (map (sys: pkg' nixpkgs.pkgsCross.${sys}) systemNames);
+      derivations = (builtins.map (sys: pkg' nixpkgs.pkgsCross.${sys}) systemNames);
     };
 
   # Takes a derivation.
@@ -141,7 +141,7 @@ let
   # Convenience function that builds a bunch of prebuilts using `preBuildDerivation` and
   # merges them using `mergePrebuilts`.
   prebuildDerivations = { nixpkgs, derivations }:
-    mergePrebuilts (map (target: preBuildDerivation { inherit nixpkgs target; }) derivations);
+    mergePrebuilts (map (target: prebuildDerivation { inherit nixpkgs target; }) derivations);
 
 
   # TODO: strict/lenient mode on the "replace" step (i.e. warn on different
@@ -166,7 +166,7 @@ let
   , produceContentAddressedDerivations ? true
   }:
   let
-    isDerivation = x: s ? type && s.type == "derivation";
+    isDerivation = x: x ? type && x.type == "derivation";
     originalSys = if isDerivation original
       then original.system
       else builtins.throw
@@ -183,7 +183,8 @@ let
         nixpkgs like `bash` and `xz`, you must provide a nixpkgs instance for
         the same system as the derivation you are trying to substitute.
         '';
-    prebuilt = if nixpkgsSysMatchesOriginalSys && prebuilts ? originalSys
+    dbg = x: builtins.trace x x;
+    prebuilt = if nixpkgsSysMatchesOriginalSys && builtins.hasAttr originalSys prebuilts
       then prebuilts.${originalSys}
       else builtins.throw
         ''
@@ -191,8 +192,7 @@ let
         the supplied prebuilts for `${original.name}`.
 
         However, we do have prebuilts for: `${toString (builtins.attrNames prebuilts)}`.
-        ''
-      prebuilts.${originalSys};
+        '';
 
     # We're looking for a path...
     prebuilt' = if isDerivation prebuilt

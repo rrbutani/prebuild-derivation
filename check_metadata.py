@@ -34,7 +34,8 @@ def check(got, key):
         )
 
 if check_extra_attrs:
-    attrs = ["inputSrcs", "system", "builder", "args", "env", "narHash"]
+    # skipping `"nar-hash"`; this is not known prior to realization.
+    attrs = ["inputSrcs", "system", "builder", "args", "env"]
     for a in attrs:
         check(drv[a], a)
 

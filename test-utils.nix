@@ -29,7 +29,7 @@ let
         "-" +
         b.pname + (if (isCA b) then "-CA" else "")
       ;
-      builder = "${np.bash}/bin/bash";
+      builder = "${nixpkgs.bash}/bin/bash";
       inherit (nixpkgs) system;
 
       _chkSameOutputs = aOutputs == bOutputs ||
@@ -40,9 +40,9 @@ let
       aOutputPaths = map (o: a.${o}) aOutputs;
       bOutputPaths = map (o: b.${o}) bOutputs;
 
-      deps = with np; [ coreutils nix_2_4 ];
+      deps = with nixpkgs; [ coreutils nix_2_4 ];
       args = [(
-        np.writeScript "cmp.sh" ''
+        nixpkgs.writeScript "cmp.sh" ''
           for d in ''${deps[@]}; do export PATH="''${PATH}:''${d}/bin"; done
 
           outputs=($outputsToCompare)
@@ -82,9 +82,11 @@ let
       )];
     };
 
+  # dbg = x: builtins.trace x x;
+
   # Where `pkg` is either a string representing an attr or a function.
   getPkgDerivation = pkg:
-    (if isString pkg then getAttr pkg else pkg) nixpkgs;
+    (if builtins.isString pkg then builtins.getAttr pkg else pkg) nixpkgs;
 
   roundtrip = pkg:
     let
