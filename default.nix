@@ -246,7 +246,70 @@ let
     ))
     else original'
   ;
+
+  createTarballWithPrebuiltSets =
+  { nixpkgs
+  , name ? "tarball-with-prebuilts"
+  , base
+    # { packageName => { system => derivation } }
+    #
+    # these will land in `sources.nix`
+  , prebuiltSets ? {}
+    # { path => path }
+  , additions ? {}
+    # [path]
+  , exclude ? []
+    # { path => [sed style replacement] list }
+  , replacements ? []
+  }:
+  let
+    prebuiltDir = "prebuilts";
+  in
+  derivation {
+    inherit name additions exclude prebuiltSets base prebuiltDir;
+    inherit (nixpkgs) system;
+    __structuredAttrs = true;
+
+    builder = "${nixpkgs.bash}/bin/bash";
+    deps = with nixpkgs; [ coreutils python310 gnutar xz ];
+
+    args = [(
+      nixpkgs.writeScript "create-tarball.sh" ''
+        . "''${NIX_ATTRS_SH_FILE}"
+        for d in "''${deps[@]}"; do export PATH="''${PATH}:''${d}/bin"; done
+
+        set -e
+
+        out="''${outputs[out]}"
+
+        staging="$(mktemp -d)"
+        chmod u+rwx $staging
+        staging="''${staging}/${name}"
+
+        cp -R "$base" "$staging"
+        chmod u+rwx "$staging"
+        mkdir "$staging/$prebuiltDir"
+        if [ -f "$staging/sources.nix" ]; then chmod u+rw "$staging/sources.nix"; fi
+
+        (
+          cd "$staging";
+          python3 "${./create_tarball.py}" \
+            "''${NIX_ATTRS_JSON_FILE}" \
+            > sources.nix
+        )
+
+        mkdir -p $out
+        tar rf "$out/archive.tar" -C "$staging/.." "$name" # --transform "s,^./,''${name}/,"
+        xz "$out/archive.tar"
+
+        # TODO: additions
+        # TODO: excludes
+      ''
+    )];
+  };
+
 in {
   inherit prebuild restore;
   inherit prebuildNixpkg prebuildDerivations substituteForPrebuilt conditionallySubstitute;
+  inherit createTarballWithPrebuiltSets;
 }
