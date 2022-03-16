@@ -45,7 +45,7 @@ derivation {
 
       getAttr() { jq -r "''${@}" <"''${NIX_ATTRS_JSON_FILE}"; }
 
-      out="''${outputs[out]}";
+      out="''${outputs[out]}"
       mkdir -p $out
 
       nix show-derivation ''${targetPath} > drv.json 2>/dev/null || {

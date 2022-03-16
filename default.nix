@@ -11,11 +11,6 @@
   ]
   # Default `nixpkgs` instance to use, if not specified.
 , nixpkgs ? null
-, system ? (
-    if builtins ? system
-    then builtins.system
-    else builtins.throw "Please specify `system`!"
-  )
 }:
 
 let
@@ -183,7 +178,6 @@ let
         nixpkgs like `bash` and `xz`, you must provide a nixpkgs instance for
         the same system as the derivation you are trying to substitute.
         '';
-    dbg = x: builtins.trace x x;
     prebuilt = if nixpkgsSysMatchesOriginalSys && builtins.hasAttr originalSys prebuilts
       then prebuilts.${originalSys}
       else builtins.throw
